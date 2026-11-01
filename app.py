@@ -9,11 +9,11 @@ from fpdf import FPDF
 import qrcode
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Facturación IA (Prototipo TFI)", page_icon="🧾", layout="wide")
+st.set_page_config(page_title="Facturador", layout="wide")
 
-# --- REQUISITO CÁTEDRA: CONFIGURACIÓN IA ---
+# --- REQUISITO CÁTEDRA: CONFIGURACIÓN ---
 with st.sidebar:
-    st.header("⚙️ Configuración del Modelo IA")
+    st.header("Configuración del Sistema")
     st.info("Parámetros del proceso TO-BE simulado")
     st.write("**Rol:** Asistente de facturación comercial.")
     st.write("**Contexto:** Extracción automática de datos de Órdenes de Compra (PDF) para agilizar la facturación.")
@@ -26,7 +26,7 @@ try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 except Exception as e:
-    st.error("Error al cargar la clave de Gemini. Revisá los Secrets en Streamlit.")
+    st.error("Error al cargar la clave del entorno. Revisá los Secrets en el servidor.")
     st.stop()
 
 # --- FUNCIONES DE NÚCLEO ---
@@ -154,25 +154,25 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
     return archivo_salida
 
 # --- INTERFAZ STREAMLIT ---
-st.title("🧾 Simulador de Comprobantes ARCA")
+st.title("Facturador")
 
 st.subheader("1. Subir Orden de Compra")
-archivo = st.file_uploader("Cargá un PDF de Orden de Compra", type=["pdf"])
+archivo = st.file_uploader("Cargar un documento PDF", type=["pdf"])
 
 if archivo is not None:
-    if st.button("🔍 Extraer Datos con IA", use_container_width=True):
-        with st.spinner("Procesando con IA..."):
+    if st.button("Extraer Datos", use_container_width=True):
+        with st.spinner("Procesando documento..."):
             try:
                 st.session_state["datos_oc"] = extraer_datos_oc(archivo.getvalue())
-                st.success("¡Datos extraídos!")
+                st.success("Datos extraídos correctamente.")
             except Exception as ex:
                 st.error(str(ex))
 
 if "datos_oc" not in st.session_state:
-    st.info("👈 Cargá un PDF arriba para habilitar el formulario administrativo.")
+    st.info("Cargue un documento PDF para habilitar el panel de facturación.")
 else:
     st.divider()
-    st.subheader("2. Panel de Control ARCA")
+    st.subheader("2. Panel de Facturación")
     datos = st.session_state["datos_oc"]
     
     st.markdown("#### Datos de Emisión")
@@ -188,7 +188,7 @@ else:
     
     fecha_desde = fecha_hasta = vto_pago = None
     if concepto in [2, 3]:
-        st.warning("⚠️ ARCA requiere los períodos obligatorios para la facturación de Servicios.")
+        st.warning("El período facturado es obligatorio para la prestación de servicios.")
         cs1, cs2, cs3 = st.columns(3)
         with cs1:
             fecha_desde = st.date_input("Período Desde")
@@ -214,19 +214,16 @@ else:
         numero_remito = st.text_input("N° Remito Vinculado", value="")
     with c7:
         fecha_remito = st.date_input("Fecha Remito", disabled=(numero_remito == ""))
-        cuit_emisor = st.number_input("CUIT Emisor (Tu empresa)", value=20141240103)
+        cuit_emisor = st.number_input("CUIT Emisor (Propio)", value=20141240103)
 
-    # --- NUEVA SECCIÓN: EDICIÓN DE ÍTEMS CON ALÍCUOTA DE IVA ---
     st.divider()
     st.markdown("#### Detalle de Ítems a Facturar")
-    st.caption("Podés editar la descripción, cantidad, precio unitario y alícuota de IVA antes de emitir.")
     
     items_extraidos = datos.get("items", [])
     items_finales = []
     neto = 0.0
     iva = 0.0
     
-    # Opciones de ARCA
     opciones_iva = [21.0, 10.5, 27.0, 0.0]
 
     col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([3, 1.5, 2, 1.5, 2])
@@ -246,7 +243,6 @@ else:
         with ci3:
             precio_mod = st.number_input(f"Prec_{i}", value=float(item.get("precio_unitario", 0.0)), min_value=0.0, label_visibility="collapsed")
         with ci4:
-            # Forzamos 21% por defecto si la IA tiró un valor raro
             iva_sugerido = item.get("alicuota_iva", 21.0)
             if iva_sugerido not in opciones_iva:
                 iva_sugerido = 21.0
@@ -276,8 +272,8 @@ else:
     st.caption(f"Importe Neto Gravado: ${neto:,.2f} | IVA Calculado: ${iva:,.2f}")
     st.divider()
 
-    if st.button("⚡ Confirmar y Generar PDF Oficial", type="primary", use_container_width=True):
-        with st.spinner("Conectando con simulador ARCA..."):
+    if st.button("Confirmar y Generar Comprobante", type="primary", use_container_width=True):
+        with st.spinner("Procesando solicitud..."):
             try:
                 res_arca = emitir_factura_arca()
                 
@@ -306,15 +302,15 @@ else:
                 }
                 
                 ruta = generar_pdf_factura(datos_pdf, items_finales)
-                st.success(f"¡Autorizado! CAE simulado: {res_arca['cae']}")
+                st.success(f"Comprobante autorizado. CAE: {res_arca['cae']}")
                 
                 with open(ruta, "rb") as f_pdf:
                     st.download_button(
-                        label="📥 Descargar Factura (PDF)",
+                        label="Descargar Factura (PDF)",
                         data=f_pdf,
                         file_name=f"Factura_{str(punto_vta).zfill(4)}-{str(res_arca['nro_factura']).zfill(8)}.pdf",
                         mime="application/pdf",
                         use_container_width=True
                     )
             except Exception as e:
-                st.error(f"Error generando PDF: {e}")
+                st.error(f"Error en el proceso: {e}")
