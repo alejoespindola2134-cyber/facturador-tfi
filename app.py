@@ -11,13 +11,49 @@ import qrcode
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Facturador Grafitecnia", layout="wide")
 
+# --- DISEÑO Y PALETA DE COLORES CORPORATIVA (GRAFETECNIA) ---
+st.markdown("""
+    <style>
+    /* Estilos generales y tipografía corporativa */
+    h1, h2, h3 {
+        color: #1A1A1A;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+    
+    /* Subtítulos de sección con acento naranja Grafitecnia */
+    h4 {
+        color: #F26522;
+        border-bottom: 2px solid #F26522;
+        padding-bottom: 4px;
+        margin-top: 20px;
+    }
+
+    /* Botones primarios con el naranja exacto del logo */
+    div.stButton > button[kind="primary"] {
+        background-color: #F26522;
+        color: white;
+        border: none;
+        font-weight: bold;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #D9541C;
+        color: white;
+    }
+
+    /* Tarjetas o contenedores con bordes sutiles */
+    .element-container {
+        color: #1A1A1A;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- REQUISITO CÁTEDRA: CONFIGURACIÓN ---
 with st.sidebar:
     st.header("Configuración del Sistema")
     st.info("Parámetros del proceso TO-BE simulado")
     st.write("**Rol:** Asistente de facturación comercial.")
     st.write("**Contexto:** Extracción automática de datos de Órdenes de Compra (PDF) para agilizar la facturación.")
-    st.write("**Reglas de negocio:** Identificar CUIT válido, Razón Social, e ítems con cantidades y precios netos unitarios.")
+    st.write("**Reglas de negocio:** Identificar CUIT válido, Razón Social, e ítems con cantidades enteras y precios netos unitarios.")
     st.write("**Formato de salida:** JSON estricto estructurado.")
     st.write("**Restricciones:** No inventar datos, omitir impuestos en el precio unitario, derivar al usuario si falta el CUIT (Excepción).")
 
@@ -156,7 +192,7 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
 # --- INTERFAZ STREAMLIT ---
 
 if os.path.exists("logo.png"):
-    st.image("logo.png", width=250)
+    st.image("logo.png", width=220)
 
 st.title("Sistema de Facturación")
 
@@ -243,7 +279,6 @@ else:
         with ci1:
             desc_mod = st.text_input(f"Desc_{i}", value=item.get("descripcion", ""), label_visibility="collapsed")
         with ci2:
-            # Forzamos paso entero (step=1) y valor entero
             cant_mod = st.number_input(f"Cant_{i}", value=int(item.get("cantidad", 1)), min_value=1, step=1, label_visibility="collapsed")
         with ci3:
             precio_mod = st.number_input(f"Prec_{i}", value=float(item.get("precio_unitario", 0.0)), min_value=0.0, label_visibility="collapsed")
