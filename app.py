@@ -178,4 +178,4 @@ else:
     st.markdown("#### Datos de Emisión")
     c1, c2, c3 = st.columns(3)
     with c1:
-        fecha_emision = st.date_input("Fecha Comprobante", value)
+fecha_emision = st.date_input("Fecha Comprobante", value=datetime.date.today())
