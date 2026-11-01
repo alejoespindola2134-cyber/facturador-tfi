@@ -313,44 +313,48 @@ else:
     st.divider()
 
     if st.button("Confirmar y Generar Comprobante", type="primary", use_container_width=True):
-        with st.spinner("Procesando solicitud..."):
-            try:
-                res_arca = emitir_factura_arca()
-                
-                datos_pdf = {
-                    "tipo_cbte": tipo_cbte,
-                    "punto_vta": punto_vta,
-                    "fecha_emision": fecha_emision,
-                    "concepto": concepto,
-                    "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta,
-                    "vto_pago": vto_pago,
-                    "cuit_emisor": cuit_emisor,
-                    "cuit_cliente": cuit_cliente,
-                    "razon_social": razon_social,
-                    "condicion_iva_str": dic_iva[condicion_iva],
-                    "condicion_venta": condicion_venta,
-                    "numero_oc": numero_oc,
-                    "numero_remito": numero_remito,
-                    "fecha_remito": fecha_remito if numero_remito else None,
-                    "imp_neto": neto,
-                    "imp_iva": iva,
-                    "imp_total": total,
-                    "cae": res_arca['cae'],
-                    "vto_cae": res_arca['vto_cae'],
-                    "nro_factura": res_arca['nro_factura']
-                }
-                
-                ruta = generar_pdf_factura(datos_pdf, items_finales)
-                st.success(f"Comprobante autorizado. CAE: {res_arca['cae']}")
-                
-                with open(ruta, "rb") as f_pdf:
-                    st.download_button(
-                        label="Descargar Factura (PDF)",
-                        data=f_pdf,
-                        file_name=f"Factura_{str(punto_vta).zfill(4)}-{str(res_arca['nro_factura']).zfill(8)}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-            except Exception as e:
-                st.error(f"Error en el proceso: {e}")
+        cuit_limpio = "".join(filter(str.isdigit, str(cuit_cliente)))
+        if len(cuit_limpio) != 11:
+            st.error("Error de validación: El CUIT del receptor debe contener exactamente 11 dígitos numéricos.")
+        else:
+            with st.spinner("Procesando solicitud..."):
+                try:
+                    res_arca = emitir_factura_arca()
+                    
+                    datos_pdf = {
+                        "tipo_cbte": tipo_cbte,
+                        "punto_vta": punto_vta,
+                        "fecha_emision": fecha_emision,
+                        "concepto": concepto,
+                        "fecha_desde": fecha_desde,
+                        "fecha_hasta": fecha_hasta,
+                        "vto_pago": vto_pago,
+                        "cuit_emisor": cuit_emisor,
+                        "cuit_cliente": cuit_limpio,
+                        "razon_social": razon_social,
+                        "condicion_iva_str": dic_iva[condicion_iva],
+                        "condicion_venta": condicion_venta,
+                        "numero_oc": numero_oc,
+                        "numero_remito": numero_remito,
+                        "fecha_remito": fecha_remito if numero_remito else None,
+                        "imp_neto": neto,
+                        "imp_iva": iva,
+                        "imp_total": total,
+                        "cae": res_arca['cae'],
+                        "vto_cae": res_arca['vto_cae'],
+                        "nro_factura": res_arca['nro_factura']
+                    }
+                    
+                    ruta = generar_pdf_factura(datos_pdf, items_finales)
+                    st.success(f"Comprobante autorizado. CAE: {res_arca['cae']}")
+                    
+                    with open(ruta, "rb") as f_pdf:
+                        st.download_button(
+                            label="Descargar Factura (PDF)",
+                            data=f_pdf,
+                            file_name=f"Factura_{str(punto_vta).zfill(4)}-{str(res_arca['nro_factura']).zfill(8)}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                except Exception as e:
+                    st.error(f"Error en el proceso: {e}")
