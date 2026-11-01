@@ -9,7 +9,7 @@ from fpdf import FPDF
 import qrcode
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Facturación IA (Prototipo TFI)", page_icon="🧾", layout="centered")
+st.set_page_config(page_title="Facturación IA (Prototipo TFI)", page_icon="🧾", layout="wide")
 
 # --- REQUISITO CÁTEDRA: CONFIGURACIÓN IA ---
 with st.sidebar:
@@ -178,96 +178,4 @@ else:
     st.markdown("#### Datos de Emisión")
     c1, c2, c3 = st.columns(3)
     with c1:
-        fecha_emision = st.date_input("Fecha Comprobante", value=datetime.date.today())
-    with c2:
-        tipo_cbte = st.selectbox("Tipo", options=[1, 6], format_func=lambda x: "Factura A" if x == 1 else "Factura B")
-    with c3:
-        punto_vta = st.number_input("Punto Venta", value=1, min_value=1)
-        
-    concepto = st.selectbox("Concepto a facturar", options=[1, 2, 3], format_func=lambda x: {1: "1 - Productos", 2: "2 - Servicios", 3: "3 - Productos y Servicios"}[x])
-    
-    fecha_desde = fecha_hasta = vto_pago = None
-    if concepto in [2, 3]:
-        st.warning("⚠️ ARCA requiere los períodos obligatorios para la facturación de Servicios.")
-        cs1, cs2, cs3 = st.columns(3)
-        with cs1:
-            fecha_desde = st.date_input("Período Desde")
-        with cs2:
-            fecha_hasta = st.date_input("Período Hasta")
-        with cs3:
-            vto_pago = st.date_input("Vto. para el Pago")
-
-    st.markdown("#### Datos del Receptor")
-    c4, c5 = st.columns(2)
-    with c4:
-        cuit_cliente = st.text_input("CUIT", value=datos.get("cuit_cliente", ""))
-        dic_iva = {1: "IVA Resp. Inscripto", 6: "Monotributo", 5: "Consumidor Final", 4: "Exento"}
-        condicion_iva = st.selectbox("Condición frente al IVA", options=[1, 6, 5, 4], format_func=lambda x: dic_iva[x])
-    with c5:
-        razon_social = st.text_input("Razón Social", value=datos.get("razon_social", ""))
-        condicion_venta = st.selectbox("Condición de Venta", options=["Cuenta Corriente", "Contado", "Tarjeta de Débito", "Tarjeta de Crédito", "Cheque"])
-
-    st.markdown("#### Documentos Asociados")
-    c6, c7 = st.columns(2)
-    with c6:
-        numero_oc = st.text_input("N° Orden de Compra", value=datos.get("numero_oc", ""))
-        numero_remito = st.text_input("N° Remito Vinculado", value="")
-    with c7:
-        fecha_remito = st.date_input("Fecha Remito", disabled=(numero_remito == ""))
-        cuit_emisor = st.number_input("CUIT Emisor (Tu empresa)", value=20141240103)
-
-    st.divider()
-    items = datos.get("items", [])
-    neto = 0.0
-    iva = 0.0
-    for item in items:
-        sub = item["cantidad"] * item["precio_unitario"]
-        neto += sub
-        iva += sub * (item.get("alicuota_iva", 21.0) / 100.0)
-
-    total = neto + iva
-    st.subheader(f"Total: ${total:,.2f}")
-    st.caption(f"Importe Neto Gravado: ${neto:,.2f} | IVA: ${iva:,.2f}")
-
-    if st.button("⚡ Confirmar y Generar PDF Oficial", type="primary", use_container_width=True):
-        with st.spinner("Conectando con simulador ARCA..."):
-            try:
-                res_arca = emitir_factura_arca()
-                
-                datos_pdf = {
-                    "tipo_cbte": tipo_cbte,
-                    "punto_vta": punto_vta,
-                    "fecha_emision": fecha_emision,
-                    "concepto": concepto,
-                    "fecha_desde": fecha_desde,
-                    "fecha_hasta": fecha_hasta,
-                    "vto_pago": vto_pago,
-                    "cuit_emisor": cuit_emisor,
-                    "cuit_cliente": cuit_cliente,
-                    "razon_social": razon_social,
-                    "condicion_iva_str": dic_iva[condicion_iva],
-                    "condicion_venta": condicion_venta,
-                    "numero_oc": numero_oc,
-                    "numero_remito": numero_remito,
-                    "fecha_remito": fecha_remito if numero_remito else None,
-                    "imp_neto": neto,
-                    "imp_iva": iva,
-                    "imp_total": total,
-                    "cae": res_arca['cae'],
-                    "vto_cae": res_arca['vto_cae'],
-                    "nro_factura": res_arca['nro_factura']
-                }
-                
-                ruta = generar_pdf_factura(datos_pdf, items)
-                st.success(f"¡Autorizado! CAE simulado: {res_arca['cae']}")
-                
-                with open(ruta, "rb") as f_pdf:
-                    st.download_button(
-                        label="📥 Descargar Factura (PDF)",
-                        data=f_pdf,
-                        file_name=f"Factura_{str(punto_vta).zfill(4)}-{str(res_arca['nro_factura']).zfill(8)}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-            except Exception as e:
-                st.error(f"Error generando PDF: {e}")
+        fecha_emision = st.date_input("Fecha Comprobante", value)
