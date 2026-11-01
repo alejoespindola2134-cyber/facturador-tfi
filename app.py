@@ -53,7 +53,12 @@ def extraer_datos_oc(bytes_pdf: bytes) -> dict:
     }
     El precio unitario debe ser neto, sin impuestos, símbolos ni separadores de miles.
     """
-    modelos_disponibles = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]
+# Modelos actualizados según la recomendación de la API
+    modelos_disponibles = [
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
+        "gemini-2.5-flash"
+    ]
     cliente = obtener_cliente_gemini()
     ultimo_error = None
 
