@@ -9,7 +9,23 @@ from fpdf import FPDF
 import qrcode
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Facturador", layout="wide")
+st.set_page_config(page_title="Facturador Grafitecnia", layout="wide")
+
+# --- DISEÑO Y COLORES CORPORATIVOS (CSS) ---
+st.markdown("""
+    <style>
+    /* Botones primarios con el naranja Grafitecnia */
+    div.stButton > button[kind="primary"] {
+        background-color: #F26522;
+        color: white;
+        border: none;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #D9541C;
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- REQUISITO CÁTEDRA: CONFIGURACIÓN ---
 with st.sidebar:
@@ -154,13 +170,18 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
     return archivo_salida
 
 # --- INTERFAZ STREAMLIT ---
-st.title("Facturador")
 
-st.subheader("1. Subir Orden de Compra")
+# Carga del Logo si existe en el repositorio
+if os.path.exists("logo.png"):
+    st.image("logo.png", width=250)
+
+st.title("Sistema de Facturación")
+
+st.subheader("Subir Orden de Compra")
 archivo = st.file_uploader("Cargar un documento PDF", type=["pdf"])
 
 if archivo is not None:
-    if st.button("Extraer Datos", use_container_width=True):
+    if st.button("Extraer Datos", type="primary", use_container_width=True):
         with st.spinner("Procesando documento..."):
             try:
                 st.session_state["datos_oc"] = extraer_datos_oc(archivo.getvalue())
@@ -172,7 +193,7 @@ if "datos_oc" not in st.session_state:
     st.info("Cargue un documento PDF para habilitar el panel de facturación.")
 else:
     st.divider()
-    st.subheader("2. Panel de Facturación")
+    st.subheader("Panel de Facturación")
     datos = st.session_state["datos_oc"]
     
     st.markdown("#### Datos de Emisión")
@@ -184,7 +205,7 @@ else:
     with c3:
         punto_vta = st.number_input("Punto Venta", value=1, min_value=1)
         
-    concepto = st.selectbox("Concepto a facturar", options=[1, 2, 3], format_func=lambda x: {1: "1 - Productos", 2: "2 - Servicios", 3: "3 - Productos y Servicios"}[x])
+    concepto = st.selectbox("Concepto a facturar", options=[1, 2, 3], format_func=lambda x: {1: "Productos", 2: "Servicios", 3: "Productos y Servicios"}[x])
     
     fecha_desde = fecha_hasta = vto_pago = None
     if concepto in [2, 3]:
