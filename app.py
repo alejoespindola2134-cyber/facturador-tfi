@@ -98,3 +98,56 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
     letra = "A" if datos_fac["tipo_cbte"] == 1 else "B"
     pdf.cell(0, 6, f"TIPO: {letra} - COD. {str(datos_fac['tipo_cbte']).zfill(2)}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
+
+    # Datos Emisor & Comprobante
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(95, 6, f"Punto de Venta: {str(datos_fac['punto_vta']).zfill(4)}", border="L,T")
+    pdf.cell(95, 6, f"Comp. Nro: {str(datos_fac['nro_factura']).zfill(8)}", border="R,T", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(95, 6, f"CUIT Emisor: {datos_fac['cuit_emisor']}", border="L,B")
+    pdf.cell(95, 6, f"Fecha de Emision: {datos_fac['fecha_emision'].strftime('%d/%m/%Y')}", border="R,B", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    # Datos Receptor & Operación
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, "DATOS DEL RECEPTOR Y CONDICIONES", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(105, 5, f"Razon Social: {datos_fac['razon_social']}", new_x="RIGHT")
+    pdf.cell(85, 5, f"CUIT: {datos_fac['cuit_cliente']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(105, 5, f"Condicion de Venta: {datos_fac['condicion_venta']}", new_x="RIGHT")
+    pdf.cell(85, 5, f"Condicion IVA: {datos_fac['condicion_iva_str']}", new_x="LMARGIN", new_y="NEXT")
+    
+    # Documentos Asociados
+    if datos_fac.get('numero_remito') or datos_fac.get('numero_oc'):
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "I", 8)
+        texto_docs = f"Documentos Asociados -> OC: {datos_fac.get('numero_oc', 'N/A')}"
+        if datos_fac.get('numero_remito'):
+            fecha_r = datos_fac['fecha_remito'].strftime('%d/%m/%Y') if datos_fac.get('fecha_remito') else 'N/A'
+            texto_docs += f" | Remito Nro: {datos_fac['numero_remito']} (Fecha: {fecha_r})"
+        pdf.cell(0, 5, texto_docs, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    # Tabla de Ítems
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(95, 7, "Descripcion", border=1)
+    pdf.cell(25, 7, "Cantidad", border=1, align="C")
+    pdf.cell(35, 7, "P. Unitario", border=1, align="R")
+    pdf.cell(35, 7, "Subtotal", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 9)
+    for it in items:
+        sub = it["cantidad"] * it["precio_unitario"]
+        pdf.cell(95, 6, str(it["descripcion"])[:45], border=1)
+        pdf.cell(25, 6, str(it["cantidad"]), border=1, align="C")
+        pdf.cell(35, 6, f"$ {it['precio_unitario']:,.2f}", border=1, align="R")
+        pdf.cell(35, 6, f"$ {sub:,.2f}", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(3)
+
+    # Totales
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(140, 6, "Importe Neto Gravado:", align="R")
+    pdf.cell(50, 6, f"$ {datos_fac['imp_neto']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(140, 6, "IVA (21%):", align="R")
+    pdf.cell(50, 6, f"$ {datos_fac['imp_iva']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(140, 7, "TOTAL:", align="R")
