@@ -97,4 +97,4 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
     pdf.set_font("Helvetica", "B", 12)
     letra = "A" if datos_fac["tipo_cbte"] == 1 else "B"
     pdf.cell(0, 6, f"TIPO: {letra} - COD. {str(datos_fac['tipo_cbte']).zfill(2)}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3
+    pdf.ln(3)
