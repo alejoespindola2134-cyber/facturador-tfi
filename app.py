@@ -132,7 +132,7 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(140, 6, "Importe Neto Gravado:", align="R")
     pdf.cell(50, 6, f"$ {datos_fac['imp_neto']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(140, 6, "IVA (21%):", align="R")
+    pdf.cell(140, 6, "IVA Total:", align="R")
     pdf.cell(50, 6, f"$ {datos_fac['imp_iva']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(140, 7, "TOTAL:", align="R")
     pdf.cell(50, 7, f"$ {datos_fac['imp_total']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
@@ -216,24 +216,28 @@ else:
         fecha_remito = st.date_input("Fecha Remito", disabled=(numero_remito == ""))
         cuit_emisor = st.number_input("CUIT Emisor (Tu empresa)", value=20141240103)
 
-    # --- NUEVA SECCIÓN: EDICIÓN DE ÍTEMS ---
+    # --- NUEVA SECCIÓN: EDICIÓN DE ÍTEMS CON ALÍCUOTA DE IVA ---
     st.divider()
     st.markdown("#### Detalle de Ítems a Facturar")
-    st.caption("Podés editar la descripción, cantidad y precio unitario extraídos por la IA antes de emitir.")
+    st.caption("Podés editar la descripción, cantidad, precio unitario y alícuota de IVA antes de emitir.")
     
     items_extraidos = datos.get("items", [])
     items_finales = []
     neto = 0.0
     iva = 0.0
+    
+    # Opciones de ARCA
+    opciones_iva = [21.0, 10.5, 27.0, 0.0]
 
-    col_h1, col_h2, col_h3, col_h4 = st.columns([4, 2, 2, 2])
-    col_h1.write("**Descripción del Producto/Servicio**")
+    col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([3, 1.5, 2, 1.5, 2])
+    col_h1.write("**Descripción**")
     col_h2.write("**Cantidad**")
-    col_h3.write("**Precio Unitario**")
-    col_h4.write("**Subtotal**")
+    col_h3.write("**P. Unitario**")
+    col_h4.write("**Alícuota IVA**")
+    col_h5.write("**Subtotal**")
 
     for i, item in enumerate(items_extraidos):
-        ci1, ci2, ci3, ci4 = st.columns([4, 2, 2, 2])
+        ci1, ci2, ci3, ci4, ci5 = st.columns([3, 1.5, 2, 1.5, 2])
         
         with ci1:
             desc_mod = st.text_input(f"Desc_{i}", value=item.get("descripcion", ""), label_visibility="collapsed")
@@ -241,27 +245,35 @@ else:
             cant_mod = st.number_input(f"Cant_{i}", value=float(item.get("cantidad", 1.0)), min_value=0.01, label_visibility="collapsed")
         with ci3:
             precio_mod = st.number_input(f"Prec_{i}", value=float(item.get("precio_unitario", 0.0)), min_value=0.0, label_visibility="collapsed")
+        with ci4:
+            # Forzamos 21% por defecto si la IA tiró un valor raro
+            iva_sugerido = item.get("alicuota_iva", 21.0)
+            if iva_sugerido not in opciones_iva:
+                iva_sugerido = 21.0
+            idx_iva = opciones_iva.index(iva_sugerido)
+            
+            iva_mod = st.selectbox(f"IVA_{i}", options=opciones_iva, index=idx_iva, format_func=lambda x: f"{x}%", label_visibility="collapsed")
             
         subtotal_item = cant_mod * precio_mod
         
-        with ci4:
+        with ci5:
             st.text_input(f"Sub_{i}", value=f"$ {subtotal_item:,.2f}", disabled=True, label_visibility="collapsed")
             
         items_finales.append({
             "descripcion": desc_mod,
             "cantidad": cant_mod,
             "precio_unitario": precio_mod,
-            "alicuota_iva": item.get("alicuota_iva", 21.0)
+            "alicuota_iva": iva_mod
         })
         
         neto += subtotal_item
-        iva += subtotal_item * (item.get("alicuota_iva", 21.0) / 100.0)
+        iva += subtotal_item * (iva_mod / 100.0)
 
     total = neto + iva
     
     st.write("")
     st.subheader(f"Total: ${total:,.2f}")
-    st.caption(f"Importe Neto Gravado: ${neto:,.2f} | IVA: ${iva:,.2f}")
+    st.caption(f"Importe Neto Gravado: ${neto:,.2f} | IVA Calculado: ${iva:,.2f}")
     st.divider()
 
     if st.button("⚡ Confirmar y Generar PDF Oficial", type="primary", use_container_width=True):
