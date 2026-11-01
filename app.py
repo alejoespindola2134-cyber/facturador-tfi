@@ -11,22 +11,6 @@ import qrcode
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Facturador Grafitecnia", layout="wide")
 
-# --- DISEÑO Y COLORES CORPORATIVOS (CSS) ---
-st.markdown("""
-    <style>
-    /* Botones primarios con el naranja Grafitecnia */
-    div.stButton > button[kind="primary"] {
-        background-color: #F26522;
-        color: white;
-        border: none;
-    }
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #D9541C;
-        color: white;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # --- REQUISITO CÁTEDRA: CONFIGURACIÓN ---
 with st.sidebar:
     st.header("Configuración del Sistema")
@@ -57,7 +41,7 @@ def extraer_datos_oc(bytes_pdf: bytes) -> dict:
       "items": [
         {
           "descripcion": "detalle del producto o servicio",
-          "cantidad": float o int,
+          "cantidad": integer (numero entero exacto),
           "precio_unitario": float con precio neto unitario (sin $ ni separadores de miles),
           "alicuota_iva": float (21.0, 10.5 o 0.0)
         }
@@ -140,7 +124,7 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
     for it in items:
         sub = it["cantidad"] * it["precio_unitario"]
         pdf.cell(95, 6, str(it["descripcion"])[:45], border=1)
-        pdf.cell(25, 6, str(it["cantidad"]), border=1, align="C")
+        pdf.cell(25, 6, str(int(it["cantidad"])), border=1, align="C")
         pdf.cell(35, 6, f"$ {it['precio_unitario']:,.2f}", border=1, align="R")
         pdf.cell(35, 6, f"$ {sub:,.2f}", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
@@ -171,7 +155,6 @@ def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_em
 
 # --- INTERFAZ STREAMLIT ---
 
-# Carga del Logo si existe en el repositorio
 if os.path.exists("logo.png"):
     st.image("logo.png", width=250)
 
@@ -260,7 +243,8 @@ else:
         with ci1:
             desc_mod = st.text_input(f"Desc_{i}", value=item.get("descripcion", ""), label_visibility="collapsed")
         with ci2:
-            cant_mod = st.number_input(f"Cant_{i}", value=float(item.get("cantidad", 1.0)), min_value=0.01, label_visibility="collapsed")
+            # Forzamos paso entero (step=1) y valor entero
+            cant_mod = st.number_input(f"Cant_{i}", value=int(item.get("cantidad", 1)), min_value=1, step=1, label_visibility="collapsed")
         with ci3:
             precio_mod = st.number_input(f"Prec_{i}", value=float(item.get("precio_unitario", 0.0)), min_value=0.0, label_visibility="collapsed")
         with ci4:
@@ -278,7 +262,7 @@ else:
             
         items_finales.append({
             "descripcion": desc_mod,
-            "cantidad": cant_mod,
+            "cantidad": int(cant_mod),
             "precio_unitario": precio_mod,
             "alicuota_iva": iva_mod
         })
