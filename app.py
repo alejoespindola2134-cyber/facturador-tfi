@@ -11,13 +11,18 @@ import qrcode
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Facturador Grafitecnia", layout="wide")
 
-# --- DISEÑO Y PALETA DE COLORES CORPORATIVA (GRAFETECNIA) ---
+# --- DISEÑO Y FORZAR MODO BLANCO / PALETA CORPORATIVA ---
 st.markdown("""
     <style>
-    /* Estilos generales y tipografía corporativa */
-    h1, h2, h3 {
+    /* Forzar fondo blanco general y tipografía sobria */
+    .stApp {
+        background-color: #FFFFFF;
         color: #1A1A1A;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+    
+    h1, h2, h3 {
+        color: #1A1A1A;
     }
     
     /* Subtítulos de sección con acento naranja Grafitecnia */
@@ -39,23 +44,8 @@ st.markdown("""
         background-color: #D9541C;
         color: white;
     }
-
-    /* Tarjetas o contenedores con bordes sutiles */
-    .element-container {
-        color: #1A1A1A;
-    }
     </style>
 """, unsafe_allow_html=True)
-
-# --- REQUISITO CÁTEDRA: CONFIGURACIÓN ---
-with st.sidebar:
-    st.header("Configuración del Sistema")
-    st.info("Parámetros del proceso TO-BE simulado")
-    st.write("**Rol:** Asistente de facturación comercial.")
-    st.write("**Contexto:** Extracción automática de datos de Órdenes de Compra (PDF) para agilizar la facturación.")
-    st.write("**Reglas de negocio:** Identificar CUIT válido, Razón Social, e ítems con cantidades enteras y precios netos unitarios.")
-    st.write("**Formato de salida:** JSON estricto estructurado.")
-    st.write("**Restricciones:** No inventar datos, omitir impuestos en el precio unitario, derivar al usuario si falta el CUIT (Excepción).")
 
 # --- CARGA DE API KEY GEMINI ---
 try:
