@@ -1,5 +1,5 @@
-streamlit
-google-genai
-fpdf2
-qrcode
-Pillow
+streamlit==1.38.0
+pandas==2.2.2
+fpdf2==2.7.4
+qrcode==7.4.2
+Pillow==10.3.0
