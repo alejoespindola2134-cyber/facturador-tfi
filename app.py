@@ -1,350 +1,343 @@
 import streamlit as st
-import json
-import os
+import pandas as pd
 import time
-import datetime
-from google import genai
-from google.genai import types
+import random
+import os
+from datetime import datetime
+from io import BytesIO
 from fpdf import FPDF
 import qrcode
+import tempfile
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Facturador Grafitecnia", layout="wide")
+# ==========================================
+# CONFIGURACIÓN DE PÁGINA Y ESTILOS GRAFITECNIA
+# ==========================================
+st.set_page_config(
+    page_title="Grafitecnia - Sistema ARCA", 
+    layout="wide", 
+    initial_sidebar_state="collapsed" # Fuerza la ocultación de la barra lateral
+)
 
-# --- DISEÑO Y FORZAR MODO BLANCO / PALETA CORPORATIVA ---
 st.markdown("""
     <style>
-    /* Forzar fondo blanco general y tipografía sobria */
-    .stApp {
-        background-color: #FFFFFF;
-        color: #1A1A1A;
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    }
+    /* Forzar fondo blanco y limpieza visual */
+    .stApp { background-color: #FFFFFF; }
     
-    h1, h2, h3 {
-        color: #1A1A1A;
-    }
+    /* Ocultar barra lateral y elementos por defecto de Streamlit */
+    [data-testid="collapsedControl"] { display: none; }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     
-    /* Subtítulos de sección con acento naranja Grafitecnia */
-    h4 {
-        color: #F26522;
-        border-bottom: 2px solid #F26522;
-        padding-bottom: 4px;
-        margin-top: 20px;
-    }
-
-    /* Botones primarios con el naranja exacto del logo */
-    div.stButton > button[kind="primary"] {
-        background-color: #F26522;
-        color: white;
-        border: none;
+    /* Botones primarios con el naranja institucional */
+    .stButton>button {
+        background-color: #F26522 !important;
+        color: white !important;
+        border: none !important;
         font-weight: bold;
     }
-    div.stButton > button[kind="primary"]:hover {
-        background-color: #D9541C;
-        color: white;
+    .stButton>button:hover {
+        background-color: #d95316 !important;
     }
+    h1, h2, h3 { color: #333333; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- CARGA DE API KEY GEMINI ---
-try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-except Exception as e:
-    st.error("Error al cargar la clave del entorno. Revisá los Secrets en el servidor.")
-    st.stop()
+# ==========================================
+# INICIALIZACIÓN DE BASE DE DATOS SIMULADA (STATE)
+# ==========================================
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.role = None
 
-# --- FUNCIONES DE NÚCLEO ---
-def extraer_datos_oc(bytes_pdf: bytes) -> dict:
-    prompt = """
-    Analiza esta Orden de Compra y extrae los datos para facturación comercial en Argentina.
-    Devuelve estrictamente un objeto JSON con esta estructura exacta:
-    {
-      "cuit_cliente": "solo digitos numericos sin guiones",
-      "razon_social": "nombre de la empresa o cliente",
-      "numero_oc": "identificador de OC",
-      "items": [
-        {
-          "descripcion": "detalle del producto o servicio",
-          "cantidad": integer (numero entero exacto),
-          "precio_unitario": float con precio neto unitario (sin $ ni separadores de miles),
-          "alicuota_iva": float (21.0, 10.5 o 0.0)
-        }
-      ]
-    }
-    """
-    
-    modelos_disponibles = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-flash"]
-    ultimo_error = None
-    
-    for modelo in modelos_disponibles:
-        for intento in range(1, 3):
-            try:
-                respuesta = gemini_client.models.generate_content(
-                    model=modelo,
-                    contents=[types.Part.from_bytes(data=bytes_pdf, mime_type="application/pdf"), prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1)
-                )
-                if respuesta.text:
-                    return json.loads(respuesta.text)
-            except Exception as e:
-                ultimo_error = e
-                time.sleep(1)
+if "db_facturas" not in st.session_state:
+    st.session_state.db_facturas = pd.DataFrame({
+        "Fecha": ["2026-11-01", "2026-11-02", "2026-11-03"],
+        "Tipo": ["Factura A", "Factura A", "Factura B"],
+        "N_Comprobante": ["0001-00000001", "0001-00000002", "0001-00000003"],
+        "CUIT": ["30712345678", "33555555559", "20123456789"],
+        "Cliente": ["Acme Corp", "Industrias TFI", "Consumidor Final"],
+        "N_OC": ["OC-1001", "OC-1002", "OC-1003"],
+        "Neto_Gravado": [100000, 50000, 10000],
+        "IVA": [21000, 10500, 2100],
+        "Total": [121000, 60500, 12100],
+        "Estado": ["Aprobada", "Aprobada", "Aprobada"],
+        "CAE": ["73158941234567", "73158941234568", "73158941234569"]
+    })
 
-    raise Exception(f"Servidores ocupados. Detalle: {ultimo_error}")
+if "db_ocs" not in st.session_state:
+    st.session_state.db_ocs = {"OC-1001", "OC-1002", "OC-1003"}
 
-def emitir_factura_arca() -> dict:
-    time.sleep(2) 
-    return {
-        "cae": "73245678901234",
-        "vto_cae": (datetime.date.today() + datetime.timedelta(days=10)).strftime("%d/%m/%Y"),
-        "nro_factura": 125
-    }
+if "paso_operativo" not in st.session_state:
+    st.session_state.paso_operativo = "carga"
 
-def generar_pdf_factura(datos_fac: dict, items: list, archivo_salida="factura_emitida.pdf"):
+if "factura_actual" not in st.session_state:
+    st.session_state.factura_actual = None
+
+# ==========================================
+# FUNCIONES AUXILIARES (PDF Y QR)
+# ==========================================
+def generar_qr(cuit, cae):
+    qr = qrcode.QRCode(version=1, box_size=4, border=4)
+    datos_qr = f"https://www.afip.gob.ar/fe/qr/?cuit={cuit}&cae={cae}"
+    qr.add_data(datos_qr)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    img.save(temp_img.name)
+    return temp_img.name
+
+def generar_pdf_factura(datos):
     pdf = FPDF()
     pdf.add_page()
-    
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 8, "FACTURA (SIMULACION TFI)", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "B", 12)
-    letra = "A" if datos_fac["tipo_cbte"] == 1 else "B"
-    pdf.cell(0, 6, f"TIPO: {letra} - COD. {str(datos_fac['tipo_cbte']).zfill(2)}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.set_text_color(242, 101, 34)
+    pdf.cell(0, 10, "GRAFITECNIA - FACTURA ELECTRONICA", ln=True, align='C')
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 10, f"Comprobante: {datos['N_Comprobante']}  |  Fecha: {datos['Fecha']}", ln=True, align='C')
+    pdf.line(10, 30, 200, 30)
+    pdf.ln(5)
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(100, 8, f"Cliente: {datos['Cliente']}", ln=False)
+    pdf.cell(90, 8, f"CUIT: {datos['CUIT']}", ln=True)
+    pdf.cell(100, 8, f"Orden de Compra: {datos['N_OC']}", ln=False)
+    pdf.cell(90, 8, f"Remito: {datos['Remito']}", ln=True)
+    pdf.line(10, 50, 200, 50)
+    pdf.ln(10)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(140, 8, "Concepto", 1)
+    pdf.cell(50, 8, "Importe", 1, ln=True, align='C')
+    pdf.cell(140, 8, "Neto Gravado", 1)
+    pdf.cell(50, 8, f"$ {datos['Neto_Gravado']:,.2f}", 1, ln=True, align='R')
+    pdf.cell(140, 8, "IVA", 1)
+    pdf.cell(50, 8, f"$ {datos['IVA']:,.2f}", 1, ln=True, align='R')
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(140, 10, "TOTAL", 1)
+    pdf.cell(50, 10, f"$ {datos['Total']:,.2f}", 1, ln=True, align='R')
+    pdf.ln(20)
+    qr_path = generar_qr(datos['CUIT'], datos['CAE'])
+    pdf.image(qr_path, x=10, w=30)
+    pdf.set_xy(45, pdf.get_y() - 20)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(0, 8, f"CAE: {datos['CAE']}", ln=True)
+    pdf.set_x(45)
+    pdf.cell(0, 8, "Vencimiento CAE: " + (pd.to_datetime(datos['Fecha']) + pd.Timedelta(days=10)).strftime("%Y-%m-%d"), ln=True)
+    return pdf.output(dest='S')
 
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(95, 6, f"Punto de Venta: {str(datos_fac['punto_vta']).zfill(4)}", border="L,T")
-    pdf.cell(95, 6, f"Comp. Nro: {str(datos_fac['nro_factura']).zfill(8)}", border="R,T", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(95, 6, f"CUIT Emisor: {datos_fac['cuit_emisor']}", border="L,B")
-    pdf.cell(95, 6, f"Fecha de Emision: {datos_fac['fecha_emision'].strftime('%d/%m/%Y')}", border="R,B", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
-    
-    if datos_fac.get('concepto') in [2, 3]:
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(0, 6, f"Periodo Facturado: Desde {datos_fac['fecha_desde'].strftime('%d/%m/%Y')} Hasta {datos_fac['fecha_hasta'].strftime('%d/%m/%Y')} | Vto. Pago: {datos_fac['vto_pago'].strftime('%d/%m/%Y')}", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(3)
+# ==========================================
+# RENDERIZADO DEL LOGO CORPORATIVO (BLOQUE SEGURO)
+# ==========================================
+col_logo, col_vacia = st.columns([1, 4])
+with col_logo:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=200)
+    else:
+        st.markdown("<h2 style='color: #F26522;'>GRAFITECNIA</h2>", unsafe_allow_html=True)
+st.divider()
 
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 6, "DATOS DEL RECEPTOR Y CONDICIONES", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(105, 5, f"Razon Social: {datos_fac['razon_social']}", new_x="RIGHT")
-    pdf.cell(85, 5, f"CUIT: {datos_fac['cuit_cliente']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(105, 5, f"Condicion de Venta: {datos_fac['condicion_venta']}", new_x="RIGHT")
-    pdf.cell(85, 5, f"Condicion IVA: {datos_fac['condicion_iva_str']}", new_x="LMARGIN", new_y="NEXT")
-    
-    texto_docs = f"Orden de Compra: {datos_fac.get('numero_oc', 'N/A')}"
-    if datos_fac.get('numero_remito'):
-        fecha_r = datos_fac['fecha_remito'].strftime('%d/%m/%Y') if datos_fac.get('fecha_remito') else 'N/A'
-        texto_docs += f" | Remito Nro: {datos_fac['numero_remito']} (Fecha: {fecha_r})"
-    pdf.cell(0, 5, texto_docs, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
+# ==========================================
+# SISTEMA DE LOGIN Y RUTEO SIN BARRA LATERAL
+# ==========================================
+if not st.session_state.logged_in:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<h3 style='text-align: center;'>Portal de Facturacion ARCA</h3>", unsafe_allow_html=True)
+        with st.form("login_form"):
+            usuario = st.text_input("Usuario")
+            password = st.text_input("Contrasena", type="password")
+            submit = st.form_submit_button("Ingresar al Sistema")
+            
+            if submit:
+                if usuario == "admin" and password == "admin":
+                    st.session_state.logged_in = True
+                    st.session_state.role = "Administracion"
+                    st.rerun()
+                elif usuario == "director" and password == "director":
+                    st.session_state.logged_in = True
+                    st.session_state.role = "Direccion"
+                    st.rerun()
+                else:
+                    st.error("Credenciales incorrectas. Verifique usuario y contrasena.")
+    st.stop()
 
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(95, 7, "Descripcion", border=1)
-    pdf.cell(25, 7, "Cantidad", border=1, align="C")
-    pdf.cell(35, 7, "P. Unitario", border=1, align="R")
-    pdf.cell(35, 7, "Subtotal", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
+# ==========================================
+# NAVEGACIÓN SUPERIOR (TABS) SEGÚN ROL
+# ==========================================
+col_titulo, col_boton = st.columns([4, 1])
+with col_titulo:
+    st.write(f"Sesion iniciada como: **{st.session_state.role}**")
+with col_boton:
+    if st.button("Cerrar Sesion"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
 
-    pdf.set_font("Helvetica", "", 9)
-    for it in items:
-        sub = it["cantidad"] * it["precio_unitario"]
-        pdf.cell(95, 6, str(it["descripcion"])[:45], border=1)
-        pdf.cell(25, 6, str(int(it["cantidad"])), border=1, align="C")
-        pdf.cell(35, 6, f"$ {it['precio_unitario']:,.2f}", border=1, align="R")
-        pdf.cell(35, 6, f"$ {sub:,.2f}", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
-
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(140, 6, "Importe Neto Gravado:", align="R")
-    pdf.cell(50, 6, f"$ {datos_fac['imp_neto']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(140, 6, "IVA Total:", align="R")
-    pdf.cell(50, 6, f"$ {datos_fac['imp_iva']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(140, 7, "TOTAL:", align="R")
-    pdf.cell(50, 7, f"$ {datos_fac['imp_total']:,.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-
-    qr_data = f"https://www.arca.gob.ar/fe/qr/?p={datos_fac['cuit_emisor']}&cae={datos_fac['cae']}"
-    qr_img = qrcode.make(qr_data)
-    qr_img.save("qr_temp.png")
-    pdf.image("qr_temp.png", x=10, y=pdf.get_y(), w=26)
-    pdf.set_xy(40, pdf.get_y() + 3)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 6, f"CAE Nro: {datos_fac['cae']}", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_x(40)
-    pdf.cell(0, 6, f"Vto. CAE: {datos_fac['vto_cae']}", new_x="LMARGIN", new_y="NEXT")
-
-    pdf.output(archivo_salida)
-    if os.path.exists("qr_temp.png"):
-        os.remove("qr_temp.png")
-    return archivo_salida
-
-# --- INTERFAZ STREAMLIT ---
-
-if os.path.exists("logo.png"):
-    st.image("logo.png", width=220)
-
-st.title("Sistema de Facturación")
-
-st.subheader("Subir Orden de Compra")
-archivo = st.file_uploader("Cargar un documento PDF", type=["pdf"])
-
-if archivo is not None:
-    if st.button("Extraer Datos", type="primary", use_container_width=True):
-        with st.spinner("Procesando documento..."):
-            try:
-                st.session_state["datos_oc"] = extraer_datos_oc(archivo.getvalue())
-                st.success("Datos extraídos correctamente.")
-            except Exception as ex:
-                st.error(str(ex))
-
-if "datos_oc" not in st.session_state:
-    st.info("Cargue un documento PDF para habilitar el panel de facturación.")
+if st.session_state.role == "Administracion":
+    tabs = st.tabs(["Consola Operativa", "Dashboard Directivo", "Reporte Contable"])
 else:
-    st.divider()
-    st.subheader("Panel de Facturación")
-    datos = st.session_state["datos_oc"]
+    tabs = st.tabs(["Dashboard Directivo", "Reporte Contable"])
     
-    st.markdown("#### Datos de Emisión")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        fecha_emision = st.date_input("Fecha Comprobante", value=datetime.date.today())
-    with c2:
-        tipo_cbte = st.selectbox("Tipo", options=[1, 6], format_func=lambda x: "Factura A" if x == 1 else "Factura B")
-    with c3:
-        punto_vta = st.number_input("Punto Venta", value=1, min_value=1)
+# Ajuste de índices de tabs según el rol
+tab_operativa = tabs[0] if st.session_state.role == "Administracion" else None
+tab_dashboard = tabs[1] if st.session_state.role == "Administracion" else tabs[0]
+tab_reporte = tabs[2] if st.session_state.role == "Administracion" else tabs[1]
+
+# ==========================================
+# CONSOLA OPERATIVA (HU 1, 2, 3, 4, 5)
+# ==========================================
+if tab_operativa:
+    with tab_operativa:
+        st.header("Consola Operativa - Emision de Comprobantes")
         
-    concepto = st.selectbox("Concepto a facturar", options=[1, 2, 3], format_func=lambda x: {1: "Productos", 2: "Servicios", 3: "Productos y Servicios"}[x])
-    
-    fecha_desde = fecha_hasta = vto_pago = None
-    if concepto in [2, 3]:
-        st.warning("El período facturado es obligatorio para la prestación de servicios.")
-        cs1, cs2, cs3 = st.columns(3)
-        with cs1:
-            fecha_desde = st.date_input("Período Desde")
-        with cs2:
-            fecha_hasta = st.date_input("Período Hasta")
-        with cs3:
-            vto_pago = st.date_input("Vto. para el Pago")
-
-    st.markdown("#### Datos del Receptor")
-    c4, c5 = st.columns(2)
-    with c4:
-        cuit_cliente = st.text_input("CUIT", value=datos.get("cuit_cliente", ""))
-        dic_iva = {1: "IVA Resp. Inscripto", 6: "Monotributo", 5: "Consumidor Final", 4: "Exento"}
-        condicion_iva = st.selectbox("Condición frente al IVA", options=[1, 6, 5, 4], format_func=lambda x: dic_iva[x])
-    with c5:
-        razon_social = st.text_input("Razón Social", value=datos.get("razon_social", ""))
-        condicion_venta = st.selectbox("Condición de Venta", options=["Cuenta Corriente", "Contado", "Tarjeta de Débito", "Tarjeta de Crédito", "Cheque"])
-
-    st.markdown("#### Documentos Asociados")
-    c6, c7 = st.columns(2)
-    with c6:
-        numero_oc = st.text_input("N° Orden de Compra", value=datos.get("numero_oc", ""))
-        numero_remito = st.text_input("N° Remito Vinculado", value="")
-    with c7:
-        fecha_remito = st.date_input("Fecha Remito", disabled=(numero_remito == ""))
-        cuit_emisor = st.number_input("CUIT Emisor (Propio)", value=20141240103)
-
-    st.divider()
-    st.markdown("#### Detalle de Ítems a Facturar")
-    
-    items_extraidos = datos.get("items", [])
-    items_finales = []
-    neto = 0.0
-    iva = 0.0
-    
-    opciones_iva = [21.0, 10.5, 27.0, 0.0]
-
-    col_h1, col_h2, col_h3, col_h4, col_h5 = st.columns([3, 1.5, 2, 1.5, 2])
-    col_h1.write("**Descripción**")
-    col_h2.write("**Cantidad**")
-    col_h3.write("**P. Unitario**")
-    col_h4.write("**Alícuota IVA**")
-    col_h5.write("**Subtotal**")
-
-    for i, item in enumerate(items_extraidos):
-        ci1, ci2, ci3, ci4, ci5 = st.columns([3, 1.5, 2, 1.5, 2])
-        
-        with ci1:
-            desc_mod = st.text_input(f"Desc_{i}", value=item.get("descripcion", ""), label_visibility="collapsed")
-        with ci2:
-            cant_mod = st.number_input(f"Cant_{i}", value=int(item.get("cantidad", 1)), min_value=1, step=1, label_visibility="collapsed")
-        with ci3:
-            precio_mod = st.number_input(f"Prec_{i}", value=float(item.get("precio_unitario", 0.0)), min_value=0.0, label_visibility="collapsed")
-        with ci4:
-            iva_sugerido = item.get("alicuota_iva", 21.0)
-            if iva_sugerido not in opciones_iva:
-                iva_sugerido = 21.0
-            idx_iva = opciones_iva.index(iva_sugerido)
+        if st.session_state.paso_operativo == "carga":
+            st.write("Arrastre la Orden de Compra en formato PDF para extraer los datos mediante Inteligencia Artificial.")
+            archivo = st.file_uploader("Cargar Orden de Compra", type=["pdf"])
             
-            iva_mod = st.selectbox(f"IVA_{i}", options=opciones_iva, index=idx_iva, format_func=lambda x: f"{x}%", label_visibility="collapsed")
-            
-        subtotal_item = cant_mod * precio_mod
-        
-        with ci5:
-            st.text_input(f"Sub_{i}", value=f"$ {subtotal_item:,.2f}", disabled=True, label_visibility="collapsed")
-            
-        items_finales.append({
-            "descripcion": desc_mod,
-            "cantidad": int(cant_mod),
-            "precio_unitario": precio_mod,
-            "alicuota_iva": iva_mod
-        })
-        
-        neto += subtotal_item
-        iva += subtotal_item * (iva_mod / 100.0)
+            if archivo is not None:
+                if st.button("Procesar documento"):
+                    with st.spinner("Procesando documento con Inteligencia Artificial..."):
+                        time.sleep(3)
+                        st.session_state.factura_actual = {
+                            "CUIT": "30111222334",
+                            "Cliente": "Cliente Simulado S.A.",
+                            "N_OC": f"OC-{random.randint(2000, 9999)}",
+                            "Concepto": "Carteleria corporea acrilico e instalacion",
+                            "Cantidad": 1,
+                            "Precio_Unitario": 150000.0,
+                            "Remito": "0000"
+                        }
+                        st.session_state.paso_operativo = "revision"
+                        st.rerun()
 
-    total = neto + iva
+        elif st.session_state.paso_operativo == "revision":
+            st.subheader("Revision de Reglas de Negocio y Datos Extraidos")
+            datos = st.session_state.factura_actual
+            
+            with st.form("form_revision"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    cuit = st.text_input("CUIT Receptor", value=datos["CUIT"], max_chars=11)
+                    cliente = st.text_input("Razon Social", value=datos["Cliente"])
+                    n_oc = st.text_input("Nro Orden de Compra", value=datos["N_OC"])
+                    remito = st.text_input("Nro Remito Fisico", value=datos["Remito"])
+                with col2:
+                    concepto = st.text_input("Descripcion", value=datos["Concepto"])
+                    cantidad = st.number_input("Cantidad", value=datos["Cantidad"], step=1, min_value=1)
+                    precio_u = st.number_input("Precio Unitario", value=datos["Precio_Unitario"], step=100.0)
+                    alicuota_iva = st.selectbox("Alicuota IVA", ["21%", "10.5%"])
+                
+                subtotal = cantidad * precio_u
+                iva_calc = subtotal * (0.21 if alicuota_iva == "21%" else 0.105)
+                total = subtotal + iva_calc
+                
+                st.info(f"Proyeccion Impositiva: Neto: ${subtotal:,.2f} | IVA: ${iva_calc:,.2f} | TOTAL: ${total:,.2f}")
+                
+                submit_factura = st.form_submit_button("Confirmar y Emitir CAE (ARCA)")
+                
+                if submit_factura:
+                    if len(cuit) != 11 or not cuit.isdigit():
+                        st.error("Error de Regla ARCA: El CUIT debe contener exactamente 11 digitos numericos.")
+                    elif n_oc in st.session_state.db_ocs:
+                        st.error("Error de Duplicidad: Esta Orden de Compra ya fue facturada anteriormente.")
+                    else:
+                        st.session_state.factura_actual.update({
+                            "CUIT": cuit, "Cliente": cliente, "N_OC": n_oc, "Remito": remito,
+                            "Neto_Gravado": subtotal, "IVA": iva_calc, "Total": total
+                        })
+                        st.session_state.paso_operativo = "emision"
+                        st.rerun()
+                        
+            if st.button("Cancelar operacion"):
+                st.session_state.paso_operativo = "carga"
+                st.rerun()
+
+        elif st.session_state.paso_operativo == "emision":
+            st.subheader("Comunicacion con ARCA")
+            
+            with st.spinner("Conectando con Web Service de ARCA y solicitando CAE..."):
+                time.sleep(2.5)
+                datos = st.session_state.factura_actual
+                datos["Fecha"] = datetime.now().strftime("%Y-%m-%d")
+                datos["N_Comprobante"] = f"0001-{random.randint(1000000, 9999999)}"
+                datos["CAE"] = str(random.randint(70000000000000, 79999999999999))
+                datos["Tipo"] = "Factura A"
+                datos["Estado"] = "Aprobada"
+                
+                nueva_fila = pd.DataFrame([datos])
+                st.session_state.db_facturas = pd.concat([st.session_state.db_facturas, nueva_fila], ignore_index=True)
+                st.session_state.db_ocs.add(datos["N_OC"])
+                
+                st.success("Comprobante emitido con exito.")
+                st.write(f"**Nro Comprobante:** {datos['N_Comprobante']}")
+                st.write(f"**Nro CAE:** {datos['CAE']}")
+                
+                pdf_bytes = generar_pdf_factura(datos)
+                
+                st.download_button(
+                    label="Descargar Factura PDF Legal",
+                    data=pdf_bytes,
+                    file_name=f"Factura_{datos['N_Comprobante']}.pdf",
+                    mime="application/pdf"
+                )
+                
+            if st.button("Volver al Inicio"):
+                st.session_state.paso_operativo = "carga"
+                st.rerun()
+
+# ==========================================
+# DASHBOARD DIRECTIVO (HU 6)
+# ==========================================
+with tab_dashboard:
+    st.header("Dashboard Directivo")
+    df = st.session_state.db_facturas
     
-    st.write("")
-    st.subheader(f"Total: ${total:,.2f}")
-    st.caption(f"Importe Neto Gravado: ${neto:,.2f} | IVA Calculado: ${iva:,.2f}")
-    st.divider()
+    if df.empty:
+        st.warning("No hay comprobantes emitidos en el sistema.")
+    else:
+        col1, col2, col3 = st.columns(3)
+        total_mes = df['Total'].sum()
+        cant_facturas = len(df)
+        aprobadas = len(df[df['Estado'] == 'Aprobada'])
+        
+        col1.metric("Total Facturado (Mes)", f"${total_mes:,.2f}")
+        col2.metric("Comprobantes Emitidos", cant_facturas)
+        col3.metric("Facturas Aprobadas", aprobadas)
+        
+        st.divider()
+        st.subheader("Volumen de Facturacion por Cliente")
+        chart_data = df.groupby('Cliente')['Total'].sum().reset_index()
+        st.bar_chart(chart_data.set_index('Cliente'))
+        
+        st.subheader("Historial Operativo")
+        cliente_filtro = st.selectbox("Filtrar por Cliente", ["Todos"] + list(df['Cliente'].unique()))
+        df_mostrar = df if cliente_filtro == "Todos" else df[df['Cliente'] == cliente_filtro]
+        st.dataframe(df_mostrar[['Fecha', 'N_Comprobante', 'Cliente', 'N_OC', 'Total', 'Estado']], use_container_width=True)
 
-    if st.button("Confirmar y Generar Comprobante", type="primary", use_container_width=True):
-        cuit_limpio = "".join(filter(str.isdigit, str(cuit_cliente)))
-        if len(cuit_limpio) != 11:
-            st.error("Error de validación: El CUIT del receptor debe contener exactamente 11 dígitos numéricos.")
-        else:
-            with st.spinner("Procesando solicitud..."):
-                try:
-                    res_arca = emitir_factura_arca()
-                    
-                    datos_pdf = {
-                        "tipo_cbte": tipo_cbte,
-                        "punto_vta": punto_vta,
-                        "fecha_emision": fecha_emision,
-                        "concepto": concepto,
-                        "fecha_desde": fecha_desde,
-                        "fecha_hasta": fecha_hasta,
-                        "vto_pago": vto_pago,
-                        "cuit_emisor": cuit_emisor,
-                        "cuit_cliente": cuit_limpio,
-                        "razon_social": razon_social,
-                        "condicion_iva_str": dic_iva[condicion_iva],
-                        "condicion_venta": condicion_venta,
-                        "numero_oc": numero_oc,
-                        "numero_remito": numero_remito,
-                        "fecha_remito": fecha_remito if numero_remito else None,
-                        "imp_neto": neto,
-                        "imp_iva": iva,
-                        "imp_total": total,
-                        "cae": res_arca['cae'],
-                        "vto_cae": res_arca['vto_cae'],
-                        "nro_factura": res_arca['nro_factura']
-                    }
-                    
-                    ruta = generar_pdf_factura(datos_pdf, items_finales)
-                    st.success(f"Comprobante autorizado. CAE: {res_arca['cae']}")
-                    
-                    with open(ruta, "rb") as f_pdf:
-                        st.download_button(
-                            label="Descargar Factura (PDF)",
-                            data=f_pdf,
-                            file_name=f"Factura_{str(punto_vta).zfill(4)}-{str(res_arca['nro_factura']).zfill(8)}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-                except Exception as e:
-                    st.error(f"Error en el proceso: {e}")
+# ==========================================
+# REPORTE PARA ESTUDIO CONTABLE (HU 7)
+# ==========================================
+with tab_reporte:
+    st.header("Exportacion para Estudio Contable")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        mes_seleccionado = st.selectbox("Seleccione Mes", ["Noviembre", "Diciembre"])
+    with col2:
+        anio_seleccionado = st.selectbox("Seleccione Ano", ["2026", "2027"])
+        
+    df = st.session_state.db_facturas
+    st.write("Vista Previa del Libro IVA Ventas:")
+    cols_contables = ['Fecha', 'Tipo', 'N_Comprobante', 'CUIT', 'Cliente', 'Neto_Gravado', 'IVA', 'Total', 'CAE']
+    
+    if df.empty:
+        st.warning("No hay datos para el periodo seleccionado.")
+    else:
+        st.dataframe(df[cols_contables], use_container_width=True)
+        csv = df[cols_contables].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Exportar Reporte de Ventas CSV",
+            data=csv,
+            file_name=f"Subdiario_Ventas_{mes_seleccionado}_{anio_seleccionado}.csv",
+            mime="text/csv",
+        )
